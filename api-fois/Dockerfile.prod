@@ -1,0 +1,78 @@
+###########
+# BUILDER #
+###########
+# pull official base image
+FROM python:3.8.10 as builder
+
+# set work directory
+WORKDIR /usr/src/api-fois
+
+# set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# install psycopg2 dependencies
+RUN apt-get update \
+    && apt-get install -y libpq-dev gcc python3-dev musl-dev dos2unix  
+
+# install other dependencies
+RUN apt-get update \
+    && apt-get install -y netcat
+
+# lint
+RUN pip install --upgrade pip
+RUN pip install flake8
+COPY . .
+RUN flake8 --ignore=E501,F401 ./app_main
+
+# install dependencies
+COPY ./requirements.txt .
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/api-fois/wheels -r requirements.txt
+
+#########
+# FINAL #
+#########
+
+# pull official base image
+FROM python:3.8.10
+
+# create directory for the app user
+RUN mkdir -p /home/api-fois
+
+# create the app user
+RUN adduser --system --group api_fois
+
+# create the appropriate directories
+ENV HOME=/home/api-fois
+ENV APP_HOME=/home/api-fois/web
+RUN mkdir $APP_HOME
+RUN mkdir $APP_HOME/staticfiles
+WORKDIR $APP_HOME
+
+# install psycopg2 dependencies
+RUN apt-get update \
+    && apt-get install -y libpq-dev gcc python3-dev musl-dev dos2unix  
+
+# install other dependencies
+RUN apt-get update \
+    && apt-get install -y netcat
+
+# install dependencies
+COPY --from=builder /usr/src/api-fois/wheels /wheels
+COPY --from=builder /usr/src/api-fois/requirements.txt .
+RUN pip install --no-cache /wheels/*
+
+# copy entrypoint-prod.sh
+COPY ./entrypoint.prod.sh $APP_HOME
+
+# copy project
+COPY . $APP_HOME
+
+# chown all the files to the app user
+RUN chown -R api_fois:api_fois $APP_HOME
+
+# change to the app user
+USER api_fois
+
+# run entrypoint.prod.sh
+ENTRYPOINT ["/home/api-fois/web/entrypoint.prod.sh"]
