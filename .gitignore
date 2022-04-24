@@ -2,3 +2,4 @@
 .env.prod
 .env.prod.db
 api-fois/env
+api-fois/staticfiles
